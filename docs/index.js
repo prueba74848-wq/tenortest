@@ -28,7 +28,10 @@
         return fetch(BASE + path + "?" + new URLSearchParams(p).toString()).then(function (res) {
             if (!res.ok) {
                 return res.text().then(function (t) {
-                    toast("Tenor " + path + " HTTP " + res.status + ": " + String(t).slice(0, 80));
+                    var msg = t;
+                    try { var j = JSON.parse(t); msg = (j.error && (j.error.message || j.error.status)) || t; } catch (e) {}
+                    log("Tenor " + path + " HTTP " + res.status + " full: " + t);
+                    if (path !== "/registershare") toast(path + " " + res.status + ": " + String(msg).replace(/\s+/g, " ").slice(0, 140));
                     throw new Error("Tenor " + path + " -> " + res.status);
                 });
             }
