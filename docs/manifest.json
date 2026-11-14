@@ -1,8 +1,8 @@
 {
-  "name": "Tenor GIFs",
-  "description": "Use Tenor for the GIF picker (port of Vencord's GifProviderSwitcher, Tenor only). Falls back to Discord's default if Tenor fails.",
+  "name": "Tenor GIFs Test",
+  "description": "Empty plugin to test hosting and loading",
   "authors": [{ "name": "prueba74848-wq" }],
   "main": "index.js",
-  "hash": "4a29842ca3d4c4eb41dba4483e566e2c17b93f34da6ec4214283745aa00a2af4",
+  "hash": "5839035d097d78aa774ba102b310632949a470a11415b192266fb6b1329271c3",
   "vendetta": { "icon": "ic_image" }
 }
