@@ -26,8 +26,20 @@
         var p = { key: KEY, locale: getLocale() };
         for (var k in params) p[k] = params[k];
         return fetch(BASE + path + "?" + new URLSearchParams(p).toString()).then(function (res) {
-            if (!res.ok) throw new Error("Tenor " + path + " -> " + res.status);
-            return res.json();
+            if (!res.ok) {
+                return res.text().then(function (t) {
+                    toast("Tenor " + path + " HTTP " + res.status + ": " + String(t).slice(0, 80));
+                    throw new Error("Tenor " + path + " -> " + res.status);
+                });
+            }
+            return res.json().then(function (j) {
+                var n = (j.results && j.results.length) || (j.tags && j.tags.length) || 0;
+                if (!n) toast("Tenor " + path + " OK but empty: " + JSON.stringify(j).slice(0, 80));
+                return j;
+            });
+        }, function (err) {
+            toast("Tenor " + path + " network error: " + (err && err.message));
+            throw err;
         });
     }
 
