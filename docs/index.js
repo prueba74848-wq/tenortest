@@ -182,7 +182,31 @@
                         }
                     }));
                 } catch (e2) { log("fetch hook failed:", e2); }
-                toast("Tenor GIFs: patched " + n + " methods on " + done.length + " modules");
+                try {
+                    var FD = (vendetta.metro.common && vendetta.metro.common.FluxDispatcher) || find("dispatch", "subscribe");
+                    if (FD) undo.push(vendetta.patcher.before("dispatch", FD, function (args) {
+                        var ev = args[0] || {};
+                        var t = String(ev.type || "");
+                        if (/GIF|INTEGRATION|TENOR|KLIPY/i.test(t) && !shown["ev " + t]) {
+                            shown["ev " + t] = 1;
+                            var keys = Object.keys(ev).join(",");
+                            toast("event " + t + " [" + keys + "]");
+                            log("event " + t + " keys=" + keys);
+                        }
+                    }));
+                } catch (e3) { log("flux hook failed:", e3); }
+                try {
+                    var XO = globalThis.XMLHttpRequest && globalThis.XMLHttpRequest.prototype;
+                    if (XO) undo.push(vendetta.patcher.before("open", XO, function (args) {
+                        var u = String(args[1] || "");
+                        if (/gif|klipy|tenor|giphy/i.test(u) && !shown["xhr " + u]) {
+                            shown["xhr " + u] = 1;
+                            toast("xhr: " + u.slice(0, 120));
+                            log("xhr " + u);
+                        }
+                    }));
+                } catch (e4) { log("xhr hook failed:", e4); }
+                toast("Tenor GIFs v6: patched " + n + " methods on " + done.length + " modules");
             } catch (e) {
                 log("onLoad failed:", e);
                 toast("Tenor GIFs onLoad failed: " + (e && e.message));
