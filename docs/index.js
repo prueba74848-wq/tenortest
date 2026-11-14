@@ -9,6 +9,7 @@
     }
 
     var shown = {};
+    var bypass = false;
     function toast(t) {
         try { vendetta.ui.toasts.showToast(t); } catch (x) {}
     }
@@ -107,47 +108,83 @@
         });
     }
 
-    function ok(body) { return { ok: true, status: 200, body: body, headers: {} }; }
-
-    function handle(method, url, query, body) {
-        var format = pickFormat(query && query.media_format);
-        if (method === "get") {
-            if (url.slice(-11) === "/gifs/search")
-                return list("/search", 100, { q: query.q }, format).then(ok);
-            if (url.slice(-12) === "/gifs/suggest")
-                return api("/search_suggestions", { q: query.q, limit: "5" }).then(function (r) { return ok(r.results || []); });
-            if (url.slice(-19) === "/gifs/trending-gifs")
-                return list("/trending", 50, {}, format).then(ok);
-            if (url.slice(-14) === "/gifs/trending")
-                return trendingCategories().then(ok);
-        } else if (method === "post" && url.slice(-12) === "/gifs/select") {
-            api("/registershare", { id: body.id, q: body.q }).catch(function () {});
-            return Promise.resolve(ok({}));
-        }
-        return null;
+    function copy(ev, over) {
+        var o = {};
+        for (var k in ev) o[k] = ev[k];
+        for (var k2 in over) o[k2] = over[k2];
+        return o;
     }
 
-    function patchMethod(RestAPI, method, label) {
-        if (typeof RestAPI[method] !== "function") return null;
-        return vendetta.patcher.instead(method, RestAPI, function (args, orig) {
+    // Guess the media format Discord wants from what Klipy returned
+    function detectFormat(items) {
+        var src = String((items && items[0] && items[0].src) || "");
+        if (/\.webp/i.test(src)) return "webp";
+        if (/\.webm/i.test(src)) return "tinywebm";
+        return "tinymp4";
+    }
+
+    function patchFlux(FD) {
+        return vendetta.patcher.instead("dispatch", FD, function (args, orig) {
+            var ev = args[0];
+            var self = this;
+            if (bypass || !ev || typeof ev.type !== "string") return orig.apply(self, args);
+
+            function pass() { return orig.apply(self, args); }
+            function send(e) {
+                bypass = true;
+                try { return orig.call(self, e); } finally { bypass = false; }
+            }
+            function fail(e) { log("falling back to default provider:", e); pass(); }
+
+            var t = ev.type;
+
+            if (t === "GIF_PICKER_QUERY_SUCCESS") {
+                var q = ev.query;
+                var fmt = detectFormat(ev.items);
+                (q ? list("/search", 100, { q: q }, fmt) : list("/trending", 50, {}, fmt))
+                    .then(function (items) {
+                        if (!items.length) return pass();
+                        send(copy(ev, { items: items }));
+                    })
+                    .catch(fail);
+                return;
+            }
+
+            if (t === "GIF_PICKER_TRENDING_FETCH_SUCCESS") {
+                trendingCategories()
+                    .then(function (c) {
+                        send(copy(ev, { trendingCategories: c.categories, trendingGIFPreview: c.gifs[0] }));
+                    })
+                    .catch(fail);
+                return;
+            }
+
+            if (t === "GIF_PICKER_SUGGESTIONS_SUCCESS" && ev.query) {
+                api("/search_suggestions", { q: ev.query, limit: "5" })
+                    .then(function (r) {
+                        if (!r.results || !r.results.length) return pass();
+                        send(copy(ev, { items: r.results }));
+                    })
+                    .catch(fail);
+                return;
+            }
+
+            return orig.apply(self, args);
+        });
+    }
+
+    // Selecting a GIF: tell Tenor instead of Discord's provider
+    function patchSelect(mod) {
+        if (typeof mod.post !== "function") return null;
+        return vendetta.patcher.instead("post", mod, function (args, orig) {
             var req = args[0];
             var url = typeof req === "string" ? req : (req && req.url) || "";
-            var low = String(url).toLowerCase();
-            if (/gif|klipy|tenor/.test(low)) {
-                var key = label + "." + method + " " + url;
-                if (!shown[key]) { shown[key] = 1; toast(label + "." + method + ": " + url); log("saw " + key); }
+            if (url.slice(-12) === "/gifs/select") {
+                var b = (req && req.body) || {};
+                api("/registershare", { id: b.id, q: b.q }).catch(function () {});
+                return Promise.resolve({ ok: true, status: 200, body: {}, headers: {} });
             }
-            if (url.indexOf("/gifs/") === -1) return orig.apply(this, args);
-            var query = (req && req.query) || {};
-            var body = (req && req.body) || {};
-            var p;
-            try { p = handle(method, url, query, body); } catch (e) { p = null; }
-            if (!p) return orig.apply(this, args);
-            var self = this;
-            return p.then(function (r) { toast("Tenor served " + url); return r; }).catch(function (e) {
-                log("falling back to default provider:", e);
-                return orig.apply(self, args);
-            });
+            return orig.apply(this, args);
         });
     }
 
@@ -155,58 +192,20 @@
         onLoad: function () {
             try {
                 var find = vendetta.metro.findByProps;
-                var cands = [
-                    ["a", find("getAPIBaseURL", "get", "post")],
-                    ["b", find("getAPIBaseURL")],
-                    ["c", find("get", "post", "put", "patch", "del")],
-                    ["d", find("get", "post", "getXHR")]
-                ];
+                var FD = (vendetta.metro.common && vendetta.metro.common.FluxDispatcher) || find("dispatch", "subscribe");
+                if (FD) undo.push(patchFlux(FD));
+                else toast("Tenor GIFs: FluxDispatcher not found");
+
+                var mods = [find("getAPIBaseURL", "get", "post"), find("getAPIBaseURL")];
                 var done = [];
-                var n = 0;
-                for (var i = 0; i < cands.length; i++) {
-                    var m = cands[i][1];
+                for (var i = 0; i < mods.length; i++) {
+                    var m = mods[i];
                     if (!m || done.indexOf(m) !== -1) continue;
                     done.push(m);
-                    var methods = ["get", "post"];
-                    for (var j = 0; j < methods.length; j++) {
-                        var u = patchMethod(m, methods[j], cands[i][0]);
-                        if (u) { undo.push(u); n++; }
-                    }
+                    var u = patchSelect(m);
+                    if (u) undo.push(u);
                 }
-                try {
-                    undo.push(vendetta.patcher.before("fetch", globalThis, function (args) {
-                        var u = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
-                        if (/gif|klipy|tenor|giphy/i.test(u)) {
-                            var k = "fetch " + u;
-                            if (!shown[k]) { shown[k] = 1; toast("fetch: " + String(u).slice(0, 120)); log("saw " + k); }
-                        }
-                    }));
-                } catch (e2) { log("fetch hook failed:", e2); }
-                try {
-                    var FD = (vendetta.metro.common && vendetta.metro.common.FluxDispatcher) || find("dispatch", "subscribe");
-                    if (FD) undo.push(vendetta.patcher.before("dispatch", FD, function (args) {
-                        var ev = args[0] || {};
-                        var t = String(ev.type || "");
-                        if (/GIF|INTEGRATION|TENOR|KLIPY/i.test(t) && !shown["ev " + t]) {
-                            shown["ev " + t] = 1;
-                            var keys = Object.keys(ev).join(",");
-                            toast("event " + t + " [" + keys + "]");
-                            log("event " + t + " keys=" + keys);
-                        }
-                    }));
-                } catch (e3) { log("flux hook failed:", e3); }
-                try {
-                    var XO = globalThis.XMLHttpRequest && globalThis.XMLHttpRequest.prototype;
-                    if (XO) undo.push(vendetta.patcher.before("open", XO, function (args) {
-                        var u = String(args[1] || "");
-                        if (/gif|klipy|tenor|giphy/i.test(u) && !shown["xhr " + u]) {
-                            shown["xhr " + u] = 1;
-                            toast("xhr: " + u.slice(0, 120));
-                            log("xhr " + u);
-                        }
-                    }));
-                } catch (e4) { log("xhr hook failed:", e4); }
-                toast("Tenor GIFs v6: patched " + n + " methods on " + done.length + " modules");
+                toast("Tenor GIFs v7 loaded");
             } catch (e) {
                 log("onLoad failed:", e);
                 toast("Tenor GIFs onLoad failed: " + (e && e.message));
