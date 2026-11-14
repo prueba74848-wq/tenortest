@@ -8,6 +8,11 @@
         try { vendetta.logger.log("[Tenor GIFs] " + m + (e ? " " + (e.message || e) : "")); } catch (x) {}
     }
 
+    var shown = {};
+    function toast(t) {
+        try { vendetta.ui.toasts.showToast(t); } catch (x) {}
+    }
+
     function getLocale() {
         try {
             var find = vendetta.metro.findByProps;
@@ -107,10 +112,16 @@
         return null;
     }
 
-    function patchMethod(RestAPI, method) {
+    function patchMethod(RestAPI, method, label) {
+        if (typeof RestAPI[method] !== "function") return null;
         return vendetta.patcher.instead(method, RestAPI, function (args, orig) {
             var req = args[0];
             var url = typeof req === "string" ? req : (req && req.url) || "";
+            var low = String(url).toLowerCase();
+            if (/gif|klipy|tenor/.test(low)) {
+                var key = label + "." + method + " " + url;
+                if (!shown[key]) { shown[key] = 1; toast(label + "." + method + ": " + url); log("saw " + key); }
+            }
             if (url.indexOf("/gifs/") === -1) return orig.apply(this, args);
             var query = (req && req.query) || {};
             var body = (req && req.body) || {};
@@ -118,7 +129,7 @@
             try { p = handle(method, url, query, body); } catch (e) { p = null; }
             if (!p) return orig.apply(this, args);
             var self = this;
-            return p.catch(function (e) {
+            return p.then(function (r) { toast("Tenor served " + url); return r; }).catch(function (e) {
                 log("falling back to default provider:", e);
                 return orig.apply(self, args);
             });
@@ -129,13 +140,28 @@
         onLoad: function () {
             try {
                 var find = vendetta.metro.findByProps;
-                var RestAPI = find("getAPIBaseURL", "get", "post") || find("getAPIBaseURL");
-                if (!RestAPI) { log("REST module not found"); return; }
-                undo.push(patchMethod(RestAPI, "get"));
-                undo.push(patchMethod(RestAPI, "post"));
-                log("patched");
+                var cands = [
+                    ["a", find("getAPIBaseURL", "get", "post")],
+                    ["b", find("getAPIBaseURL")],
+                    ["c", find("get", "post", "put", "patch", "del")],
+                    ["d", find("get", "post", "getXHR")]
+                ];
+                var done = [];
+                var n = 0;
+                for (var i = 0; i < cands.length; i++) {
+                    var m = cands[i][1];
+                    if (!m || done.indexOf(m) !== -1) continue;
+                    done.push(m);
+                    var methods = ["get", "post"];
+                    for (var j = 0; j < methods.length; j++) {
+                        var u = patchMethod(m, methods[j], cands[i][0]);
+                        if (u) { undo.push(u); n++; }
+                    }
+                }
+                toast("Tenor GIFs: patched " + n + " methods on " + done.length + " modules");
             } catch (e) {
                 log("onLoad failed:", e);
+                toast("Tenor GIFs onLoad failed: " + (e && e.message));
             }
         },
         onUnload: function () {
