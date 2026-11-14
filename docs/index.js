@@ -10,9 +10,8 @@
 
     var shown = {};
     var bypass = false;
-    function toast(t) {
-        try { vendetta.ui.toasts.showToast(t); } catch (x) {}
-    }
+    // No on-screen toasts: messages only go to the debug log
+    function toast(t) { log(t); }
 
     function getLocale() {
         try {
@@ -205,7 +204,7 @@
                     var u = patchSelect(m);
                     if (u) undo.push(u);
                 }
-                toast("Tenor GIFs v7 loaded");
+                log("v8 loaded");
             } catch (e) {
                 log("onLoad failed:", e);
                 toast("Tenor GIFs onLoad failed: " + (e && e.message));
