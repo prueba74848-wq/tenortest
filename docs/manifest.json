@@ -3,6 +3,6 @@
   "description": "Use Tenor for the GIF picker (port of Vencord's GifProviderSwitcher, Tenor only). Falls back to Discord's default if Tenor fails.",
   "authors": [{ "name": "prueba74848-wq" }],
   "main": "index.js",
-  "hash": "90f0ae352d8f179687c01afb56955b345686169467d62e35fd8a76928d5ea378",
+  "hash": "4a29842ca3d4c4eb41dba4483e566e2c17b93f34da6ec4214283745aa00a2af4",
   "vendetta": { "icon": "ic_image" }
 }

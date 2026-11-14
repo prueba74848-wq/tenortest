@@ -15,7 +15,7 @@
             const LocaleStore = findByProps("locale", "getLocale") ?? findByProps("getLocale");
             const l = LocaleStore?.locale ?? LocaleStore?.getLocale?.() ?? "en-US";
             return String(l).replace("-", "_").toLowerCase();
-        } catch { return "en_us"; }
+        } catch (e) { return "en_us"; }
     }
 
     async function api(path, params) {
@@ -109,7 +109,8 @@
 
     return {
         onLoad() {
-            const RestAPI = findByProps("getAPIBaseURL", "get", "post");
+          try {
+            const RestAPI = findByProps("getAPIBaseURL", "get", "post") ?? findByProps("getAPIBaseURL");
             if (!RestAPI) { logger.error("[Tenor GIFs] REST module not found"); return; }
 
             const undo = ["get", "post"].map(method =>
@@ -128,6 +129,9 @@
                 })
             );
             unpatch = () => undo.forEach(u => u());
+          } catch (e) {
+            logger.error("[Tenor GIFs] onLoad failed:", e && e.message ? e.message : e);
+          }
         },
         onUnload() {
             unpatch?.();
