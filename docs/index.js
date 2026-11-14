@@ -158,6 +158,15 @@
                         if (u) { undo.push(u); n++; }
                     }
                 }
+                try {
+                    undo.push(vendetta.patcher.before("fetch", globalThis, function (args) {
+                        var u = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+                        if (/gif|klipy|tenor|giphy/i.test(u)) {
+                            var k = "fetch " + u;
+                            if (!shown[k]) { shown[k] = 1; toast("fetch: " + String(u).slice(0, 120)); log("saw " + k); }
+                        }
+                    }));
+                } catch (e2) { log("fetch hook failed:", e2); }
                 toast("Tenor GIFs: patched " + n + " methods on " + done.length + " modules");
             } catch (e) {
                 log("onLoad failed:", e);
